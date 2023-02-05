@@ -14,7 +14,7 @@ double vReal[SAMPLES];
 double vImag[SAMPLES];
 
 unsigned int sampling_period_us;
-unsigned long microseconds;
+unsigned long startMicros;
 
 arduinoFFT FFT = arduinoFFT(); 
 
@@ -59,16 +59,20 @@ void loop() {
 
 void getSamples(){
   for(int i = 0; i < SAMPLES; i++){
-    microseconds = micros();    //Overflows after around 70 minutes!
+    startMicros = micros();   
     vReal[i] = analogRead(MIC_IN);
     //Serial.println(vReal[i]);
     vImag[i] = 0;
     //this ensures it doesn't read too fast. 
-    while(micros() < (microseconds + sampling_period_us)){
-        }
+
+    while((unsigned long)(micros() - startMicros) < sampling_period_us){
+      }
+         // while(micros() < (microseconds + sampling_period_us)){
+    //    }
   }
 
   //FFT
+  FFT.DCRemoval(vReal, SAMPLES);
   FFT.Windowing(vReal, SAMPLES, FFT_WIN_TYP_HAMMING, FFT_FORWARD);
   FFT.Compute(vReal, vImag, SAMPLES, FFT_FORWARD);
   FFT.ComplexToMagnitude(vReal, vImag, SAMPLES);
@@ -87,12 +91,12 @@ void getSamples(){
         Serial.println(vReal[i], 1);    //View only this line in serial plotter to visualize the bins
     }
       u_int16_t total=0;
-      u_int16_t avg=0;
+      u_int16_t lowAvg=0;
       for(int i=2; i<8; i++){
         total += vReal[i];
       }
-      avg = total/6;
-      if(avg>1200){
+      lowAvg = total/6;
+      if(lowAvg>1200){
         strip.setPixelColor(0, strip.Color(255, 0, 0));
       }else{
         strip.setPixelColor(0, strip.Color(0, 0, 0));      
