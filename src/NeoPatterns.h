@@ -1,6 +1,5 @@
 #include <Adafruit_NeoPixel.h>
 
-#define INTENSITY_BINS = 5;
 // Pattern types supported:
 enum pattern
 {
@@ -228,7 +227,7 @@ public:
                 }
                 else
                 {
-                    setPixelColor(i,Wheel(((i * 256 / numPixels()) + Index) & 255, .15));
+                    setPixelColor(i,Wheel(((i * 256 / numPixels()) + Index) & 255, .1));
                   
                 }
             }

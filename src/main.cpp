@@ -5,12 +5,11 @@
 #include "hardware/pio.h"
 #include "quadrature.pio.h"
 
-#define QUADRATURE_A_PIN 10
-#define QUADRATURE_B_PIN 11
-
 #define PIN_NEO_PIXEL 5 // Arduino pin that connects to NeoPixel
-#define Clock 9         // Clock pin connected to D9
-#define Data 8          // Data pin connected to D8
+//#define QUADRATURE_A_PIN 10
+//#define QUADRATURE_B_PIN 11
+#define CLK 10         
+#define DATA 11        
 #define BUTTON 12
 
 #define NUM_PIXELS 50 // The number of LEDs (pixels) on NeoPixel
@@ -21,8 +20,15 @@
 #define CYCLE_TIME 4
 
 
-PIO pio = pio0;
-uint offset, sm;
+int counter = 0;
+int priorCounter = 0;
+int currentStateCLK;
+int lastStateCLK;
+String currentDir ="";
+
+// INPUT: Potentiometer should be connected to 5V and GND
+int potPin = A0; // Potentiometer output connected to analog pin 3
+int potVal = 0; // Variable to store the input from the potentiometer
 
 double vReal[SAMPLES];
 double vImag[SAMPLES];
@@ -34,6 +40,8 @@ unsigned long startMicros;
 
 // Tracks the time since last event fired
 unsigned long buttonPreviousMillis = 0;
+unsigned long brightnessPreviousMillis = 0;
+unsigned long brightnessPoll = 500;
 
 u_int8_t ledState = 0;
 
@@ -44,21 +52,32 @@ void getSamples();
 void getIntensities();
 void setLEDS();
 void processButtonPush();
+void updateEncoder();
 
 NeoPatterns strip = NeoPatterns(NUM_PIXELS, PIN_NEO_PIXEL, NEO_GRB + NEO_KHZ800, &StripComplete);
 
+
+
 void setup()
-{
-  // put your setup code here, to run once:
+{  // put your setup code here, to run once:
   Serial.begin(115200);
   
-
+  pinMode(CLK,INPUT_PULLUP);
+  pinMode(DATA,INPUT_PULLUP);
   pinMode(BUTTON, INPUT_PULLUP);
 
   attachInterrupt(digitalPinToInterrupt(BUTTON), processButtonPush, LOW);
+  
+  attachInterrupt(digitalPinToInterrupt(CLK), updateEncoder, CHANGE);
+attachInterrupt(digitalPinToInterrupt(DATA), updateEncoder, CHANGE);
+  
 
   // tone down the brightness
-  strip.setBrightness(40);
+  int currentPotVal = analogRead(potPin); 
+    //do a map
+    int brightnessValue = map(currentPotVal, 0, 4095, 0, 255);
+    //set the brightness    
+    strip.setBrightness(brightnessValue);    
   strip.begin();
   //strip.RainbowCycleReact(CYCLE_TIME, INTENSITY_BINS);
   setLEDS();
@@ -67,38 +86,71 @@ void setup()
   pinMode(MIC_IN, INPUT);
   // turn up the analog resolution becuase i'm using a pico
   analogReadResolution(12);  
-
-  offset = pio_add_program(pio, &quadrature_program);
-  sm = pio_claim_unused_sm(pio, true);
-  quadrature_program_init(pio, sm, offset, QUADRATURE_A_PIN, QUADRATURE_B_PIN);
+ 
 }
 
 void loop()
 { 
-  // put your main code here, to run repeatedly:
-  //pio_sm_exec_wait_blocking(pio, sm, pio_encode_in(pio_x, 32));
-  //uint encoder_value = pio_sm_get_blocking(pio, sm);
-  //Serial.println(encoder_value);
+  unsigned long currentMillis = millis();
 
-  Serial.println(offset);
-  delay(1000);
+  if ((unsigned long)(currentMillis - brightnessPreviousMillis) >= brightnessPoll)
+  {
+    int currentPotVal = analogRead(potPin); 
+    //do a map
+    int brightnessValue = map(currentPotVal, 0, 4095, 0, 255);
+    //set the brightness    
+    strip.setBrightness(brightnessValue);    
+    brightnessPreviousMillis = currentMillis;
+  }
+
+  if(priorCounter != counter)
+{  Serial.print("Direction: ");
+		Serial.print(currentDir);
+		Serial.print(" | Counter: ");
+		Serial.println(counter);
+priorCounter= counter;
+}
+ 
+  
 
 
-
-  // strip.Update();
+  
   //  int sensorValue;
   //  sensorValue = analogRead(A1);
   // Serial.println(sensorValue);
   // Collect Samples
-  //getSamples();
+  getSamples();
   // find intensities
-  //getIntensities();
-  //strip.Update(intensity);
-  //setLEDS();
-
+  getIntensities();
+  strip.Update(intensity);
+  //setLEDS(); 
   
-  //Serial.println(ledState);
 }
+
+void updateEncoder(){
+	// Read the current state of CLK
+	currentStateCLK = digitalRead(CLK);
+
+	// If last and current state of CLK are different, then pulse occurred
+	// React to only 1 state change to avoid double count
+	if (currentStateCLK != lastStateCLK  && currentStateCLK == 1){
+
+		// If the DT state is different than the CLK state then
+		// the encoder is rotating CCW so decrement
+		if (digitalRead(DATA) != currentStateCLK) {
+			counter --;
+			currentDir ="CCW";
+		} else {
+			// Encoder is rotating CW so increment
+			counter ++;
+			currentDir ="CW";
+		}		
+	}
+
+	// Remember last CLK state
+	lastStateCLK = currentStateCLK;
+}
+
 
 void processButtonPush()
 {
