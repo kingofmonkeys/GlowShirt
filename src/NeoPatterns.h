@@ -1,78 +1,129 @@
 #include <Adafruit_NeoPixel.h>
 
+#define INTENSITY_BINS = 5;
 // Pattern types supported:
-enum  pattern { NONE, RAINBOW_CYCLE, THEATER_CHASE, COLOR_WIPE, SCANNER, FADE };
+enum pattern
+{
+    NONE,
+    RAINBOW_CYCLE,
+    RAINBOW_CYCLE_REACT,
+    THEATER_CHASE,
+    COLOR_WIPE,
+    SCANNER,
+    FADE
+};
 // Patern directions supported:
-enum  direction { FORWARD, REVERSE };
+enum direction
+{
+    FORWARD,
+    REVERSE
+};
 
 // NeoPattern Class - derived from the Adafruit_NeoPixel class
 class NeoPatterns : public Adafruit_NeoPixel
 {
-    public:
+public:
+    // Member Variables:
+    pattern ActivePattern; // which pattern is running
+    direction Direction;   // direction to run the pattern
 
-    // Member Variables:  
-    pattern  ActivePattern;  // which pattern is running
-    direction Direction;     // direction to run the pattern
-    
     unsigned long Interval;   // milliseconds between updates
     unsigned long lastUpdate; // last update of position
-    
-    uint32_t Color1, Color2;  // What colors are in use
-    uint16_t TotalSteps;  // total number of steps in the pattern
-    uint16_t Index;  // current step within the pattern
-    
-    void (*OnComplete)();  // Callback on completion of pattern
-    
+
+    uint32_t Color1, Color2; // What colors are in use
+    uint16_t TotalSteps;     // total number of steps in the pattern
+    uint16_t Index;          // current step within the pattern
+
+    uint8_t reactBars;
+
+    void (*OnComplete)(); // Callback on completion of pattern
+
     // Constructor - calls base-class constructor to initialize strip
     NeoPatterns(uint16_t pixels, uint8_t pin, uint8_t type, void (*callback)())
-    :Adafruit_NeoPixel(pixels, pin, type)
+        : Adafruit_NeoPixel(pixels, pin, type)
     {
         OnComplete = callback;
     }
-    
+
     // Default Constructor
     NeoPatterns(uint16_t pixels, uint8_t pin, uint8_t type)
-    :Adafruit_NeoPixel(pixels, pin, type)
+        : Adafruit_NeoPixel(pixels, pin, type)
     {
     }
-    
+
     // Update the pattern
     void Update()
     {
-      //If you dont have unsigned long cast you will miss when the millis rolls over every 9 days
-      if((unsigned long)(millis() - lastUpdate) > Interval) // time to update
+        // If you dont have unsigned long cast you will miss when the millis rolls over every 9 days
+        if ((unsigned long)(millis() - lastUpdate) > Interval) // time to update
         {
             lastUpdate = millis();
-            switch(ActivePattern)
+            switch (ActivePattern)
             {
-                case RAINBOW_CYCLE:
-                    RainbowCycleUpdate();
-                    break;
-                case THEATER_CHASE:
-                    TheaterChaseUpdate();
-                    break;
-                case COLOR_WIPE:
-                    ColorWipeUpdate();
-                    break;
-                case SCANNER:
-                    ScannerUpdate();
-                    break;
-                case FADE:
-                    FadeUpdate();
-                    break;
-                default:
-                    break;
+            case RAINBOW_CYCLE:
+                RainbowCycleUpdate();
+                break;
+            case RAINBOW_CYCLE_REACT:
+                // can't do anything without knowing the bars...
+                break;
+            case THEATER_CHASE:
+                TheaterChaseUpdate();
+                break;
+            case COLOR_WIPE:
+                ColorWipeUpdate();
+                break;
+            case SCANNER:
+                ScannerUpdate();
+                break;
+            case FADE:
+                FadeUpdate();
+                break;
+            default:
+                break;
             }
         }
     }
-  
+
+    // Update the pattern
+    void Update(double intensity[])
+    {
+        // If you dont have unsigned long cast you will miss when the millis rolls over every 9 days
+        if ((unsigned long)(millis() - lastUpdate) > Interval) // time to update
+        {
+            lastUpdate = millis();
+            switch (ActivePattern)
+            {
+            case RAINBOW_CYCLE:
+                RainbowCycleUpdate();
+                break;
+            case RAINBOW_CYCLE_REACT:
+                RainbowCycleReactUpdate(intensity);
+                break;
+            case THEATER_CHASE:
+                TheaterChaseUpdate();
+                break;
+            case COLOR_WIPE:
+                ColorWipeUpdate();
+                break;
+            case SCANNER:
+                ScannerUpdate();
+                break;
+            case FADE:
+                FadeUpdate();
+                break;
+            default:
+                break;
+            }
+        }
+    }
+
     // Increment the Index and reset at the end
     void Increment()
     {
         if (Direction == FORWARD)
         {
-           Index++;
-           if (Index >= TotalSteps)
+            Index++;
+            if (Index >= TotalSteps)
             {
                 Index = 0;
                 if (OnComplete != NULL)
@@ -86,7 +137,7 @@ class NeoPatterns : public Adafruit_NeoPixel
             --Index;
             if (Index <= 0)
             {
-                Index = TotalSteps-1;
+                Index = TotalSteps - 1;
                 if (OnComplete != NULL)
                 {
                     OnComplete(); // call the comlpetion callback
@@ -94,14 +145,14 @@ class NeoPatterns : public Adafruit_NeoPixel
             }
         }
     }
-    
+
     // Reverse pattern direction
     void Reverse()
     {
         if (Direction == FORWARD)
         {
             Direction = REVERSE;
-            Index = TotalSteps-1;
+            Index = TotalSteps - 1;
         }
         else
         {
@@ -119,7 +170,7 @@ class NeoPatterns : public Adafruit_NeoPixel
         Index = 0;
         Direction = FORWARD;
     }
-    
+
     // Initialize for a RainbowCycle
     void RainbowCycle(uint8_t interval, direction dir = FORWARD)
     {
@@ -129,17 +180,65 @@ class NeoPatterns : public Adafruit_NeoPixel
         Index = 0;
         Direction = dir;
     }
-    
+
     // Update the Rainbow Cycle Pattern
     void RainbowCycleUpdate()
     {
-        for(int i=0; i< numPixels(); i++)
+        for (int i = 0; i < numPixels(); i++)
         {
             setPixelColor(i, Wheel(((i * 256 / numPixels()) + Index) & 255));
         }
         show();
         Increment();
     }
+
+    // Initialize for a RainbowCycle sound reactive.
+    void RainbowCycleReact(uint8_t interval, uint8_t numBins, direction dir = FORWARD)
+    {
+        ActivePattern = RAINBOW_CYCLE_REACT;
+        Interval = interval;
+        TotalSteps = 255;
+        Index = 0;
+        Direction = dir;
+        reactBars = numBins;
+    }
+
+    // Update the Rainbow Cycle Pattern
+    void RainbowCycleReactUpdate(double intensityA[])
+    {
+
+        u_int8_t perBar = numPixels() / reactBars;
+
+        u_int8_t cIndex = 0;
+
+        for (u_int8_t ak = 0; ak < reactBars; ak++)
+        {
+            //Serial.println(intensityA[ak]);
+            u_int8_t toLight = intensityA[ak] * perBar;
+
+            //Serial.print("tolight: ");
+            //Serial.println(toLight);
+
+            for (u_int8_t i = cIndex; i < cIndex + perBar; i++)
+            {
+                // this should light up to the right level.                
+                if (i < cIndex + toLight)
+                {
+                    setPixelColor(i,Wheel(((i * 256 / numPixels()) + Index) & 255, 1));                   
+                }
+                else
+                {
+                    setPixelColor(i,Wheel(((i * 256 / numPixels()) + Index) & 255, .15));
+                  
+                }
+            }
+
+            cIndex = cIndex + perBar;
+        }
+
+        show();
+        Increment();      
+        }
 
     // Initialize for a Theater Chase
     void TheaterChase(uint32_t color1, uint32_t color2, uint8_t interval, direction dir = FORWARD)
@@ -151,12 +250,12 @@ class NeoPatterns : public Adafruit_NeoPixel
         Color2 = color2;
         Index = 0;
         Direction = dir;
-   }
-    
+    }
+
     // Update the Theater Chase Pattern
     void TheaterChaseUpdate()
     {
-        for(int i=0; i< numPixels(); i++)
+        for (int i = 0; i < numPixels(); i++)
         {
             if ((i + Index) % 3 == 0)
             {
@@ -181,7 +280,7 @@ class NeoPatterns : public Adafruit_NeoPixel
         Index = 0;
         Direction = dir;
     }
-    
+
     // Update the Color Wipe Pattern
     void ColorWipeUpdate()
     {
@@ -189,7 +288,7 @@ class NeoPatterns : public Adafruit_NeoPixel
         show();
         Increment();
     }
-    
+
     // Initialize for a SCANNNER
     void Scanner(uint32_t color1, uint8_t interval)
     {
@@ -202,26 +301,26 @@ class NeoPatterns : public Adafruit_NeoPixel
 
     // Update the Scanner Pattern
     void ScannerUpdate()
-    { 
+    {
         for (int i = 0; i < numPixels(); i++)
         {
-            if (i == Index)  // Scan Pixel to the right
+            if (i == Index) // Scan Pixel to the right
             {
-                 setPixelColor(i, Color1);
+                setPixelColor(i, Color1);
             }
             else if (i == TotalSteps - Index) // Scan Pixel to the left
             {
-                 setPixelColor(i, Color1);
+                setPixelColor(i, Color1);
             }
             else // Fading tail
             {
-                 setPixelColor(i, DimColor(getPixelColor(i)));
+                setPixelColor(i, DimColor(getPixelColor(i)));
             }
         }
         show();
         Increment();
     }
-    
+
     // Initialize for a Fade
     void Fade(uint32_t color1, uint32_t color2, uint16_t steps, uint8_t interval, direction dir = FORWARD)
     {
@@ -233,7 +332,7 @@ class NeoPatterns : public Adafruit_NeoPixel
         Index = 0;
         Direction = dir;
     }
-    
+
     // Update the Fade Pattern
     void FadeUpdate()
     {
@@ -242,12 +341,12 @@ class NeoPatterns : public Adafruit_NeoPixel
         uint8_t red = ((Red(Color1) * (TotalSteps - Index)) + (Red(Color2) * Index)) / TotalSteps;
         uint8_t green = ((Green(Color1) * (TotalSteps - Index)) + (Green(Color2) * Index)) / TotalSteps;
         uint8_t blue = ((Blue(Color1) * (TotalSteps - Index)) + (Blue(Color2) * Index)) / TotalSteps;
-        
+
         ColorSet(Color(red, green, blue));
         show();
         Increment();
     }
-   
+
     // Calculate 50% dimmed version of a color (used by ScannerUpdate)
     uint32_t DimColor(uint32_t color)
     {
@@ -283,17 +382,17 @@ class NeoPatterns : public Adafruit_NeoPixel
     {
         return color & 0xFF;
     }
-    
+
     // Input a value 0 to 255 to get a color value.
     // The colours are a transition r - g - b - back to r.
     uint32_t Wheel(byte WheelPos)
     {
         WheelPos = 255 - WheelPos;
-        if(WheelPos < 85)
+        if (WheelPos < 85)
         {
             return Color(255 - WheelPos * 3, 0, WheelPos * 3);
         }
-        else if(WheelPos < 170)
+        else if (WheelPos < 170)
         {
             WheelPos -= 85;
             return Color(0, WheelPos * 3, 255 - WheelPos * 3);
@@ -304,118 +403,141 @@ class NeoPatterns : public Adafruit_NeoPixel
             return Color(WheelPos * 3, 255 - WheelPos * 3, 0);
         }
     }
+
+// Input a value 0 to 255 to get a color value.
+    // The colours are a transition r - g - b - back to r.
+    uint32_t Wheel(byte WheelPos, double relIntensity)
+    {
+        WheelPos = 255 - WheelPos;
+        if (WheelPos < 85)
+        {
+            return Color((255 - WheelPos * 3) * relIntensity, 0, (WheelPos * 3) * relIntensity);
+        }
+        else if (WheelPos < 170)
+        {
+            WheelPos -= 85;
+            return Color(0, (WheelPos * 3) * relIntensity, (255 - WheelPos * 3) * relIntensity);
+        }
+        else
+        {
+            WheelPos -= 170;
+            return Color((WheelPos * 3) * relIntensity, (255 - WheelPos * 3) * relIntensity, 0);
+        }
+    }
+
+
 };
 
 //
-//void Ring1Complete();
-//void Ring2Complete();
-//void StickComplete();
+// void Ring1Complete();
+// void Ring2Complete();
+// void StickComplete();
 //
 //// Define some NeoPatterns for the two rings and the stick
 ////  as well as some completion routines
-//NeoPatterns Ring1(24, 5, NEO_GRB + NEO_KHZ800, &Ring1Complete);
-//NeoPatterns Ring2(16, 6, NEO_GRB + NEO_KHZ800, &Ring2Complete);
-//NeoPatterns Stick(16, 7, NEO_GRB + NEO_KHZ800, &StickComplete);
+// NeoPatterns Ring1(24, 5, NEO_GRB + NEO_KHZ800, &Ring1Complete);
+// NeoPatterns Ring2(16, 6, NEO_GRB + NEO_KHZ800, &Ring2Complete);
+// NeoPatterns Stick(16, 7, NEO_GRB + NEO_KHZ800, &StickComplete);
 //
 //// Initialize everything and prepare to start
-//void setup()
+// void setup()
 //{
-//  Serial.begin(115200);
+//   Serial.begin(115200);
 //
-//   pinMode(8, INPUT_PULLUP);
-//   pinMode(9, INPUT_PULLUP);
-//    
-//    // Initialize all the pixelStrips
-//    Ring1.begin();
-//    Ring2.begin();
-//    Stick.begin();
-//    
-//    // Kick off a pattern
-//    Ring1.TheaterChase(Ring1.Color(255,255,0), Ring1.Color(0,0,50), 100);
-//    Ring2.RainbowCycle(3);
-//    Ring2.Color1 = Ring1.Color1;
-//    Stick.Scanner(Ring1.Color(255,0,0), 55);
-//}
+//    pinMode(8, INPUT_PULLUP);
+//    pinMode(9, INPUT_PULLUP);
+//
+//     // Initialize all the pixelStrips
+//     Ring1.begin();
+//     Ring2.begin();
+//     Stick.begin();
+//
+//     // Kick off a pattern
+//     Ring1.TheaterChase(Ring1.Color(255,255,0), Ring1.Color(0,0,50), 100);
+//     Ring2.RainbowCycle(3);
+//     Ring2.Color1 = Ring1.Color1;
+//     Stick.Scanner(Ring1.Color(255,0,0), 55);
+// }
 //
 //// Main loop
-//void loop()
+// void loop()
 //{
-//    // Update the rings.
-//    Ring1.Update();
-//    Ring2.Update();    
-//    
-//    // Switch patterns on a button press:
-//    if (digitalRead(8) == LOW) // Button #1 pressed
-//    {
-//        // Switch Ring1 to FADE pattern
-//        Ring1.ActivePattern = FADE;
-//        Ring1.Interval = 20;
-//        // Speed up the rainbow on Ring2
-//        Ring2.Interval = 0;
-//        // Set stick to all red
-//        Stick.ColorSet(Stick.Color(255, 0, 0));
-//    }
-//    else if (digitalRead(9) == LOW) // Button #2 pressed
-//    {
-//        // Switch to alternating color wipes on Rings1 and 2
-//        Ring1.ActivePattern = COLOR_WIPE;
-//        Ring2.ActivePattern = COLOR_WIPE;
-//        Ring2.TotalSteps = Ring2.numPixels();
-//        // And update tbe stick
-//        Stick.Update();
-//    }
-//    else // Back to normal operation
-//    {
-//        // Restore all pattern parameters to normal values
-//        Ring1.ActivePattern = THEATER_CHASE;
-//        Ring1.Interval = 100;
-//        Ring2.ActivePattern = RAINBOW_CYCLE;
-//        Ring2.TotalSteps = 255;
-//        Ring2.Interval = min(10, Ring2.Interval);
-//        // And update tbe stick
-//        Stick.Update();
-//    }    
-//}
+//     // Update the rings.
+//     Ring1.Update();
+//     Ring2.Update();
+//
+//     // Switch patterns on a button press:
+//     if (digitalRead(8) == LOW) // Button #1 pressed
+//     {
+//         // Switch Ring1 to FADE pattern
+//         Ring1.ActivePattern = FADE;
+//         Ring1.Interval = 20;
+//         // Speed up the rainbow on Ring2
+//         Ring2.Interval = 0;
+//         // Set stick to all red
+//         Stick.ColorSet(Stick.Color(255, 0, 0));
+//     }
+//     else if (digitalRead(9) == LOW) // Button #2 pressed
+//     {
+//         // Switch to alternating color wipes on Rings1 and 2
+//         Ring1.ActivePattern = COLOR_WIPE;
+//         Ring2.ActivePattern = COLOR_WIPE;
+//         Ring2.TotalSteps = Ring2.numPixels();
+//         // And update tbe stick
+//         Stick.Update();
+//     }
+//     else // Back to normal operation
+//     {
+//         // Restore all pattern parameters to normal values
+//         Ring1.ActivePattern = THEATER_CHASE;
+//         Ring1.Interval = 100;
+//         Ring2.ActivePattern = RAINBOW_CYCLE;
+//         Ring2.TotalSteps = 255;
+//         Ring2.Interval = min(10, Ring2.Interval);
+//         // And update tbe stick
+//         Stick.Update();
+//     }
+// }
 //
 ////------------------------------------------------------------
 ////Completion Routines - get called on completion of a pattern
 ////------------------------------------------------------------
 //
 //// Ring1 Completion Callback
-//void Ring1Complete()
+// void Ring1Complete()
 //{
-//    if (digitalRead(9) == LOW)  // Button #2 pressed
-//    {
-//        // Alternate color-wipe patterns with Ring2
-//        Ring2.Interval = 40;
-//        Ring1.Color1 = Ring1.Wheel(random(255));
-//        Ring1.Interval = 20000;
-//    }
-//    else  // Retrn to normal
-//    {
-//      Ring1.Reverse();
-//    }
-//}
+//     if (digitalRead(9) == LOW)  // Button #2 pressed
+//     {
+//         // Alternate color-wipe patterns with Ring2
+//         Ring2.Interval = 40;
+//         Ring1.Color1 = Ring1.Wheel(random(255));
+//         Ring1.Interval = 20000;
+//     }
+//     else  // Retrn to normal
+//     {
+//       Ring1.Reverse();
+//     }
+// }
 //
 //// Ring 2 Completion Callback
-//void Ring2Complete()
+// void Ring2Complete()
 //{
-//    if (digitalRead(9) == LOW)  // Button #2 pressed
-//    {
-//        // Alternate color-wipe patterns with Ring1
-//        Ring1.Interval = 20;
-//        Ring2.Color1 = Ring2.Wheel(random(255));
-//        Ring2.Interval = 20000;
-//    }
-//    else  // Retrn to normal
-//    {
-//        Ring2.RainbowCycle(random(0,10));
-//    }
-//}
+//     if (digitalRead(9) == LOW)  // Button #2 pressed
+//     {
+//         // Alternate color-wipe patterns with Ring1
+//         Ring1.Interval = 20;
+//         Ring2.Color1 = Ring2.Wheel(random(255));
+//         Ring2.Interval = 20000;
+//     }
+//     else  // Retrn to normal
+//     {
+//         Ring2.RainbowCycle(random(0,10));
+//     }
+// }
 //
 //// Stick Completion Callback
-//void StickComplete()
+// void StickComplete()
 //{
-//    // Random color change for next scan
-//    Stick.Color1 = Stick.Wheel(random(255));
-//}
+//     // Random color change for next scan
+//     Stick.Color1 = Stick.Wheel(random(255));
+// }

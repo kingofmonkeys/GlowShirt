@@ -2,13 +2,27 @@
 #include <Adafruit_NeoPixel.h>
 #include <NeoPatterns.h>
 #include <arduinoFFT.h>
+#include "hardware/pio.h"
+#include "quadrature.pio.h"
+
+#define QUADRATURE_A_PIN 10
+#define QUADRATURE_B_PIN 11
 
 #define PIN_NEO_PIXEL 5 // Arduino pin that connects to NeoPixel
-#define NUM_PIXELS 50   // The number of LEDs (pixels) on NeoPixel
-#define SAMPLES 64      // Must be a power of 2
+#define Clock 9         // Clock pin connected to D9
+#define Data 8          // Data pin connected to D8
+#define BUTTON 12
+
+#define NUM_PIXELS 50 // The number of LEDs (pixels) on NeoPixel
+#define SAMPLES 64    // Must be a power of 2
 #define MIC_IN A1
 #define SAMPLING_FREQUENCY 4000 // Hz, must be less than 10000 due to ADC
 #define INTENSITY_BINS 5
+#define CYCLE_TIME 4
+
+
+PIO pio = pio0;
+uint offset, sm;
 
 double vReal[SAMPLES];
 double vImag[SAMPLES];
@@ -18,187 +32,97 @@ double intensity[INTENSITY_BINS];
 unsigned int sampling_period_us;
 unsigned long startMicros;
 
+// Tracks the time since last event fired
+unsigned long buttonPreviousMillis = 0;
+
+u_int8_t ledState = 0;
+
 arduinoFFT FFT = arduinoFFT();
 
 void StripComplete();
 void getSamples();
 void getIntensities();
 void setLEDS();
+void processButtonPush();
 
 NeoPatterns strip = NeoPatterns(NUM_PIXELS, PIN_NEO_PIXEL, NEO_GRB + NEO_KHZ800, &StripComplete);
-
-uint32_t ledState = 8;
 
 void setup()
 {
   // put your setup code here, to run once:
-  Serial.begin(9600);
-  strip.setBrightness(70);
+  Serial.begin(115200);
+  
+
+  pinMode(BUTTON, INPUT_PULLUP);
+
+  attachInterrupt(digitalPinToInterrupt(BUTTON), processButtonPush, LOW);
+
+  // tone down the brightness
+  strip.setBrightness(40);
   strip.begin();
-  // put your setup code here, to run once:
-  // for (uint32_t i = 0; i < NUM_PIXELS; i++) {
-  //  strip.setPixelColor(i, strip.Color(128, 255, 128));
-  // }
-  // strip.RainbowCycle(2);
-  strip.show();
+  //strip.RainbowCycleReact(CYCLE_TIME, INTENSITY_BINS);
+  setLEDS();
   sampling_period_us = round(1000000 * (1.0 / SAMPLING_FREQUENCY));
   // set mic pin to input (not sure if this is even needed)
   pinMode(MIC_IN, INPUT);
   // turn up the analog resolution becuase i'm using a pico
-  analogReadResolution(12);
+  analogReadResolution(12);  
+
+  offset = pio_add_program(pio, &quadrature_program);
+  sm = pio_claim_unused_sm(pio, true);
+  quadrature_program_init(pio, sm, offset, QUADRATURE_A_PIN, QUADRATURE_B_PIN);
 }
 
 void loop()
-{
+{ 
   // put your main code here, to run repeatedly:
+  //pio_sm_exec_wait_blocking(pio, sm, pio_encode_in(pio_x, 32));
+  //uint encoder_value = pio_sm_get_blocking(pio, sm);
+  //Serial.println(encoder_value);
+
+  Serial.println(offset);
+  delay(1000);
+
+
+
   // strip.Update();
   //  int sensorValue;
   //  sensorValue = analogRead(A1);
   // Serial.println(sensorValue);
-
   // Collect Samples
-  getSamples();
+  //getSamples();
   // find intensities
-  getIntensities();
+  //getIntensities();
+  //strip.Update(intensity);
+  //setLEDS();
 
-  setLEDS();
-  //delay(10000);
- 
+  
+  //Serial.println(ledState);
 }
 
-void setLEDS()
+void processButtonPush()
 {
+  unsigned long currentMillis = millis();
+  unsigned long debounce = 1000;
 
-  u_int8_t totLEDS = 50;
-  u_int8_t bars = 5;
-  u_int8_t perBar = totLEDS / bars;
-
-  u_int8_t cIndex = 0;
-
-  for (u_int8_t ak=0; ak < INTENSITY_BINS; ak++)
+  if ((unsigned long)(currentMillis - buttonPreviousMillis) >= debounce)
   {
-    Serial.println(intensity[ak]);
-    u_int8_t toLight = intensity[ak] * perBar;
-    boolean invert = false;
-
-    Serial.print("tolight: ");
-    Serial.println(toLight);
-
-    for (u_int8_t i = cIndex; i < cIndex + perBar; i++)
+    // button pushed
+    // set the led state/increment
+    if (ledState >= 1)
     {
-      // this should light up to the right level.
-      if (i < cIndex + toLight)
-      {
-        if (i < 10)
-        {
-          strip.setPixelColor(i, strip.Color(255, 0, 0));
-        }
-        else if (i < 20)
-        {
-          strip.setPixelColor(i, strip.Color(255, 0, 255));
-        }
-        else if (i < 30)
-        {
-          strip.setPixelColor(i, strip.Color(0, 0, 255));
-        }
-        else if (i < 40)
-        {
-          strip.setPixelColor(i, strip.Color(255, 255, 0));
-        }
-        else if (i < 50)
-        {
-          strip.setPixelColor(i, strip.Color(0, 255, 0));
-        }
-      }
-      else
-      {
-        strip.setPixelColor(i, strip.Color(0, 0, 0));
-      }
+      ledState = 0;
+    }
+    else
+    {
+      ledState++;
     }
 
-    cIndex = cIndex + perBar;
+    setLEDS();
+    
+    // make sure to reset this time for the debounce code
+    buttonPreviousMillis = currentMillis;
   }
-  
-  strip.show();
-
-  // // cut out the
-  // for (int i = 2; i < 8; i++)
-  // {
-  //   total += vReal[i];
-  // }
-  // lowAvg = total / 6;
-  // if (lowAvg > 1200)
-  // {
-  //   strip.setPixelColor(0, strip.Color(255, 0, 0));
-  // }
-  // else
-  // {
-  //   strip.setPixelColor(0, strip.Color(0, 0, 0));
-  // }
-
-  // total = 0;
-  // avg = 0;
-  // for (int i = 8; i < 14; i++)
-  // {
-  //   total += vReal[i];
-  // }
-  // avg = total / 6;
-  // if (avg > 600)
-  // {
-  //   strip.setPixelColor(1, strip.Color(255, 0, 255));
-  // }
-  // else
-  // {
-  //   strip.setPixelColor(1, strip.Color(0, 0, 0));
-  // }
-
-  // total = 0;
-  // avg = 0;
-  // for (int i = 14; i < 20; i++)
-  // {
-  //   total += vReal[i];
-  // }
-  // avg = total / 6;
-  // if (avg > 600)
-  // {
-  //   strip.setPixelColor(2, strip.Color(0, 0, 255));
-  // }
-  // else
-  // {
-  //   strip.setPixelColor(2, strip.Color(0, 0, 0));
-  // }
-
-  // total = 0;
-  // avg = 0;
-  // for (int i = 20; i < 26; i++)
-  // {
-  //   total += vReal[i];
-  // }
-  // avg = total / 6;
-  // if (avg > 600)
-  // {
-  //   strip.setPixelColor(3, strip.Color(255, 255, 0));
-  // }
-  // else
-  // {
-  //   strip.setPixelColor(3, strip.Color(0, 0, 0));
-  // }
-  // total = 0;
-  // avg = 0;
-  // for (int i = 26; i < 32; i++)
-  // {
-  //   total += vReal[i];
-  // }
-  // avg = total / 6;
-  // if (avg > 600)
-  // {
-  //   strip.setPixelColor(4, strip.Color(0, 255, 0));
-  // }
-  // else
-  // {
-  //   strip.setPixelColor(4, strip.Color(0, 0, 0));
-  // }
-
 }
 
 void getSamples()
@@ -214,8 +138,6 @@ void getSamples()
     while ((unsigned long)(micros() - startMicros) < sampling_period_us)
     {
     }
-    // while(micros() < (microseconds + sampling_period_us)){
-    //    }
   }
 }
 
@@ -229,8 +151,8 @@ void getIntensities()
   double peak = FFT.MajorPeak(vReal, SAMPLES, SAMPLING_FREQUENCY);
 
   /*PRINT RESULTS*/
-  Serial.println("peak"); // Print out what frequency is the most dominant.
-  Serial.println(peak);   // Print out what frequency is the most dominant.
+  // Serial.println("peak"); // Print out what frequency is the most dominant.
+  // Serial.println(peak);   // Print out what frequency is the most dominant.
 
   for (int i = 0; i < (SAMPLES / 2); i++)
   {
@@ -281,11 +203,11 @@ void getIntensities()
 
   // test code here.
   // should be 30
-  //Serial.print("arraySize: ");
-  //Serial.println(arraySize);
+  // Serial.print("arraySize: ");
+  // Serial.println(arraySize);
   // should be 6
-  //Serial.print("feqPerBin: ");
-  //Serial.println(feqPerBin);
+  // Serial.print("feqPerBin: ");
+  // Serial.println(feqPerBin);
 
   // need to setup intensity.
 
@@ -308,22 +230,28 @@ void getIntensities()
     // Serial.print("kin: ");
     // Serial.println(kin);
     avg = total / feqPerBin;
-   // adjust the base down.  these offsets might be an issue. 
-    if(ii==0){
-      if(avg>300){
-        avg=avg-300;
+    // adjust the base down.  these offsets might be an issue.
+    if (ii == 0)
+    {
+      if (avg > 300)
+      {
+        avg = avg - 300;
       }
     }
-    if(ii==1){
-      if(avg>100){
-        avg=avg-100;
+    if (ii == 1)
+    {
+      if (avg > 100)
+      {
+        avg = avg - 100;
       }
     }
-    if(ii==3){
-        avg=avg+200;
+    if (ii == 3)
+    {
+      avg = avg + 200;
     }
-    if(ii==4){
-        avg=avg+300;
+    if (ii == 4)
+    {
+      avg = avg + 300;
     }
     // Serial.print("avg: ");
     // Serial.println(avg);
@@ -338,45 +266,115 @@ void getIntensities()
     avg = 0;
   }
 
-  //for (u_int8_t ak=0; ak < INTENSITY_BINS; ak++)
+  // for (u_int8_t ak=0; ak < INTENSITY_BINS; ak++)
   //{
-  // Serial.println(intensity[ak]);
- // }
-  //this 800 needs to be in a sensitivy control.
-if(highest<700){
- for (u_int8_t ak=0; ak < INTENSITY_BINS; ak++)
-  {
-    intensity[ak] = 0;
-  }
-  
-}else{
-  for (u_int8_t ak=0; ak < INTENSITY_BINS; ak++)
-  {
-    intensity[ak] = intensity[ak] / highest;
-  }
-}
-
-  //for (u_int8_t ak=0; ak < INTENSITY_BINS; ak++)
- // {
- //   Serial.println(intensity[ak]);
-
-  // Update Intensity Array
-  // for(int i = 2; i < (xres*Displacement)+2; i+=Displacement){
-  //   vReal[i] = constrain(vReal[i],0 ,2047);            // set max value for input data
-  //   vReal[i] = map(vReal[i], 0, 2047, 0, yres);        // map data to fit our display
-
-  //   Intensity[(i/Displacement)-2] --;                      // Decrease displayed value
-  //   if (vReal[i] > Intensity[(i/Displacement)-2])          // Match displayed value to measured value
-  //     Intensity[(i/Displacement)-2] = vReal[i];
+  //  Serial.println(intensity[ak]);
   // }
+  // this 800 needs to be in a sensitivy control.
+  if (highest < 700)
+  {
+    for (u_int8_t ak = 0; ak < INTENSITY_BINS; ak++)
+    {
+      intensity[ak] = 0;
+    }
+  }
+  else
+  {
+    for (u_int8_t ak = 0; ak < INTENSITY_BINS; ak++)
+    {
+      intensity[ak] = intensity[ak] / highest;
+    }
+  }
 }
 
 // Strip Completion Callback
 void StripComplete()
 {
-  // this starts the rainbow cycle over if the ledState is set to rainbow cycle
-  if (ledState == 8)
+  setLEDS();
+}
+
+void setLEDS()
+{
+  if (ledState == 0)
   {
-    strip.RainbowCycle(10);
+    strip.RainbowCycleReact(CYCLE_TIME, INTENSITY_BINS);
+  }
+  else if (ledState == 1)
+  {
+    strip.RainbowCycle(CYCLE_TIME);
   }
 }
+
+// void setLEDS()
+// {
+
+//   u_int8_t totLEDS = 50;
+//   u_int8_t bars = 5;
+//   u_int8_t perBar = totLEDS / bars;
+
+//   u_int8_t cIndex = 0;
+
+//   for (u_int8_t ak = 0; ak < INTENSITY_BINS; ak++)
+//   {
+//     //Serial.println(intensity[ak]);
+//     u_int8_t toLight = intensity[ak] * perBar;
+
+//     //Serial.print("tolight: ");
+//     //Serial.println(toLight);
+
+//     for (u_int8_t i = cIndex; i < cIndex + perBar; i++)
+//     {
+//       // this should light up to the right level.
+//       if (i < cIndex + toLight)
+//       {
+//         if (i < 10)
+//         {
+//           strip.setPixelColor(i, strip.Color(255, 0, 0));
+//         }
+//         else if (i < 20)
+//         {
+//           strip.setPixelColor(i, strip.Color(255, 0, 255));
+//         }
+//         else if (i < 30)
+//         {
+//           strip.setPixelColor(i, strip.Color(0, 0, 255));
+//         }
+//         else if (i < 40)
+//         {
+//           strip.setPixelColor(i, strip.Color(255, 255, 0));
+//         }
+//         else if (i < 50)
+//         {
+//           strip.setPixelColor(i, strip.Color(0, 255, 0));
+//         }
+//       }
+//       else
+//       {
+//         if (i < 10)
+//         {
+//           strip.setPixelColor(i, strip.Color(20, 0, 0));
+//         }
+//         else if (i < 20)
+//         {
+//           strip.setPixelColor(i, strip.Color(20, 0, 20));
+//         }
+//         else if (i < 30)
+//         {
+//           strip.setPixelColor(i, strip.Color(0, 0, 20));
+//         }
+//         else if (i < 40)
+//         {
+//           strip.setPixelColor(i, strip.Color(20, 20, 0));
+//         }
+//         else if (i < 50)
+//         {
+//           strip.setPixelColor(i, strip.Color(0, 20, 0));
+//         }
+//       }
+//     }
+
+//     cIndex = cIndex + perBar;
+//   }
+
+//   strip.show();
+// }
