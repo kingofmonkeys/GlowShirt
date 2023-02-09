@@ -13,11 +13,9 @@
 
 #define SAMPLES 64 // Must be a power of 2
 #define MIC_IN A1
-#define SAMPLING_FREQUENCY 2000 // Hz, must be less than 10000 due to ADC
+#define SAMPLING_FREQUENCY 30000 // Hz, must be less than 10000 due to ADC
 #define INTENSITY_BINS 5
 #define CYCLE_TIME 4
-
-
 
 // #define QUADRATURE_A_PIN 10
 // #define QUADRATURE_B_PIN 11
@@ -34,6 +32,9 @@ String currentDir = "";
 unsigned int brightnessPotPin = A0;
 unsigned int brightnessPotVal = 0; // Variable to store the input from the potentiometer
 
+unsigned int senPotPin = A2;
+unsigned int senPotVal = 0; // Variable to store the input from the potentiometer
+
 double vReal[SAMPLES];
 double vImag[SAMPLES];
 
@@ -46,6 +47,8 @@ unsigned long startMicros;
 unsigned long buttonPreviousMillis = 0;
 unsigned long brightnessPreviousMillis = 0;
 unsigned long brightnessPoll = 500;
+unsigned long senPreviousMillis = 0;
+unsigned long senPoll = 500;
 
 // This is used to change the led mode
 u_int8_t ledState = 0;
@@ -65,15 +68,22 @@ NeoPatterns backStrip = NeoPatterns(NUM_PIXELS_BACK, PIN_NEO_PIXEL_BACK, NEO_GRB
 void setup()
 { // put your setup code here, to run once:
   Serial.begin(115200);
+    // turn up the analog resolution becuase i'm using a pico
+  analogReadResolution(12);
 
   pinMode(CLK, INPUT_PULLUP);
   pinMode(DATA, INPUT_PULLUP);
   pinMode(BUTTON, INPUT_PULLUP);
+  pinMode(MIC_IN, INPUT);  
+  // set mic pin to input (not sure if this is even needed)
+  pinMode(brightnessPotPin,INPUT);
+  pinMode(senPotPin,INPUT);
 
   attachInterrupt(digitalPinToInterrupt(BUTTON), processButtonPush, LOW);
+//disable encoder code since i'm not using it
 
-  attachInterrupt(digitalPinToInterrupt(CLK), updateEncoder, CHANGE);
-  attachInterrupt(digitalPinToInterrupt(DATA), updateEncoder, CHANGE);
+ // attachInterrupt(digitalPinToInterrupt(CLK), updateEncoder, CHANGE);
+  //attachInterrupt(digitalPinToInterrupt(DATA), updateEncoder, CHANGE);
 
   // tone down the brightness
   int brightnessCurrentPotVal = analogRead(brightnessPotPin);
@@ -86,10 +96,10 @@ void setup()
   backStrip.begin();
   setLEDS();
   sampling_period_us = round(1000000 * (1.0 / SAMPLING_FREQUENCY));
-  // set mic pin to input (not sure if this is even needed)
-  pinMode(MIC_IN, INPUT);
-  // turn up the analog resolution becuase i'm using a pico
-  analogReadResolution(12);
+
+  // tone down the brightness
+  int senPotVal = analogRead(brightnessPotPin);
+
 }
 
 void loop()
@@ -107,6 +117,16 @@ void loop()
 
         brightnessPreviousMillis = currentMillis;
   }
+
+
+  if ((unsigned long)(currentMillis - senPreviousMillis) >= senPoll)
+  {
+    senPotVal = analogRead(senPotPin);
+    Serial.println(senPotVal);
+    senPreviousMillis = currentMillis;
+  }
+
+
 
   if (priorCounter != counter)
   {
@@ -205,6 +225,7 @@ void getSamples()
 
     while ((unsigned long)(micros() - startMicros) < sampling_period_us)
     {
+     // Serial.println("waiting..");
     }
   }
 }
@@ -231,39 +252,6 @@ void getIntensities()
   //   // Serial.println(vReal[i], 1); // View only this line in serial plotter to visualize the bins
   // }
 
-  /* // TEST data
-  vReal[0] = 500;
-  vReal[1] = 500;
-  vReal[2] = 10;
-  vReal[3] = 10;
-  vReal[4] = 10;
-  vReal[5] = 10;
-  vReal[6] = 10;
-  vReal[7] = 10;
-  vReal[8] = 20;
-  vReal[9] = 20;
-  vReal[10] = 20;
-  vReal[11] = 20;
-  vReal[12] = 20;
-  vReal[13] = 20;
-  vReal[14] = 30;
-  vReal[15] = 30;
-  vReal[16] = 30;
-  vReal[17] = 30;
-  vReal[18] = 30;
-  vReal[19] = 30;
-  vReal[20] = 40;
-  vReal[21] = 40;
-  vReal[22] = 40;
-  vReal[23] = 40;
-  vReal[24] = 40;
-  vReal[25] = 40;
-  vReal[26] = 50;
-  vReal[27] = 50;
-  vReal[28] = 50;
-  vReal[29] = 50;
-  vReal[30] = 50;
-  vReal[31] = 50; */
 
   // gets the size of the array to use for finding intensity bins.  We remove the first two since they are bad values.
   u_int8_t arraySize = (SAMPLES / 2) - 2;
@@ -313,48 +301,29 @@ void getIntensities()
       // total += vReal[2];
       // total += vReal[3];
       // avg = total / 2;
-      if (avg > 1000)
-        {
-          avg = avg - 1000;
-        } else {
-          avg = avg/2;
-        }
+      avg = avg*.9;
+      // if (avg > 1000)
+      //   {
+      //     avg = avg - 1000;
+      //   } else {
+      //     avg = avg/2;
+      //   }
+    } if (ii == 1)
+    { 
+        avg = avg*1.4;
+    }if (ii == 2)
+    { 
+        avg = avg*3;
     }
-    if (ii == 1)
-    {      
-       if (avg > 100)
-       {
-         avg = avg - 100;
-       }
-      //total += vReal[8];
-      //total += vReal[9];
-      //total += vReal[10];
-      //avg = total / 3;
-    }
-    // if (ii == 2)
-    // {
-    //   total += vReal[13];
-    //   total += vReal[14];
-    //   total += vReal[15];
-    //   avg = total / 3;
-    // }
     
-    if (ii == 3)
-    {
-      avg = avg + 200;
-    //  total += vReal[18];
-    //   total += vReal[19];
-    //   total += vReal[20];
-    //   avg = total / 3;
+    else{
+      avg = avg *3.5;
+      
     }
-    if (ii == 4)
-    {
-      avg = avg + 300;
-      // total += vReal[27];
-      // total += vReal[28];
-      // total += vReal[30];
-      // avg = total / 3;
-    }
+    if(avg>4095){
+        avg = 4095;
+      }
+    
 
     // Serial.print("avg: ");
     // Serial.println(avg);
@@ -373,26 +342,26 @@ void getIntensities()
   }
   
   u_int8_t sumAvg = sum / count;
-Serial.println(highest);
+//Serial.println(highest);
 
   // for (u_int8_t ak=0; ak < INTENSITY_BINS; ak++)
   //{
   //  Serial.println(intensity[ak]);
   // }
-  // this 800 needs to be in a sensitivy control.
-  if (highest < 400 || highest < sumAvg * 2)
+  if (highest > senPotVal )
   {
     for (u_int8_t ak = 0; ak < INTENSITY_BINS; ak++)
     {
-      intensity[ak] = 0;
+      intensity[ak] = intensity[ak] / highest;
     }
   }
   else
   {
     for (u_int8_t ak = 0; ak < INTENSITY_BINS; ak++)
     {
-      intensity[ak] = intensity[ak] / highest;
+      intensity[ak] = 0;
     }
+    
   }
 }
 
@@ -411,83 +380,7 @@ void setLEDS()
   }
   else if (ledState == 1)
   {
-    frontStrip.RainbowCycle(CYCLE_TIME);
-    backStrip.RainbowCycle(CYCLE_TIME);
+    frontStrip.RainbowCycle(CYCLE_TIME+6);
+    backStrip.RainbowCycle(CYCLE_TIME+6);
   }
 }
-
-// this is junk below this
-
-// void setLEDS()
-// {
-
-//   u_int8_t totLEDS = 50;
-//   u_int8_t bars = 5;
-//   u_int8_t perBar = totLEDS / bars;
-
-//   u_int8_t cIndex = 0;
-
-//   for (u_int8_t ak = 0; ak < INTENSITY_BINS; ak++)
-//   {
-//     //Serial.println(intensity[ak]);
-//     u_int8_t toLight = intensity[ak] * perBar;
-
-//     //Serial.print("tolight: ");
-//     //Serial.println(toLight);
-
-//     for (u_int8_t i = cIndex; i < cIndex + perBar; i++)
-//     {
-//       // this should light up to the right level.
-//       if (i < cIndex + toLight)
-//       {
-//         if (i < 10)
-//         {
-//           strip.setPixelColor(i, strip.Color(255, 0, 0));
-//         }
-//         else if (i < 20)
-//         {
-//           strip.setPixelColor(i, strip.Color(255, 0, 255));
-//         }
-//         else if (i < 30)
-//         {
-//           strip.setPixelColor(i, strip.Color(0, 0, 255));
-//         }
-//         else if (i < 40)
-//         {
-//           strip.setPixelColor(i, strip.Color(255, 255, 0));
-//         }
-//         else if (i < 50)
-//         {
-//           strip.setPixelColor(i, strip.Color(0, 255, 0));
-//         }
-//       }
-//       else
-//       {
-//         if (i < 10)
-//         {
-//           strip.setPixelColor(i, strip.Color(20, 0, 0));
-//         }
-//         else if (i < 20)
-//         {
-//           strip.setPixelColor(i, strip.Color(20, 0, 20));
-//         }
-//         else if (i < 30)
-//         {
-//           strip.setPixelColor(i, strip.Color(0, 0, 20));
-//         }
-//         else if (i < 40)
-//         {
-//           strip.setPixelColor(i, strip.Color(20, 20, 0));
-//         }
-//         else if (i < 50)
-//         {
-//           strip.setPixelColor(i, strip.Color(0, 20, 0));
-//         }
-//       }
-//     }
-
-//     cIndex = cIndex + perBar;
-//   }
-
-//   strip.show();
-// }
