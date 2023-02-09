@@ -6,6 +6,7 @@ enum pattern
     NONE,
     RAINBOW_CYCLE,
     RAINBOW_CYCLE_REACT,
+    RAINBOW_CYCLE_SINGLE_REACT,
     THEATER_CHASE,
     COLOR_WIPE,
     SCANNER,
@@ -65,6 +66,9 @@ public:
             case RAINBOW_CYCLE_REACT:
                 // can't do anything without knowing the bars...
                 break;
+            case RAINBOW_CYCLE_SINGLE_REACT:
+                // can't do anything without knowing the bars...
+                break;
             case THEATER_CHASE:
                 TheaterChaseUpdate();
                 break;
@@ -97,6 +101,9 @@ public:
                 break;
             case RAINBOW_CYCLE_REACT:
                 RainbowCycleReactUpdate(intensity);
+                break;
+            case RAINBOW_CYCLE_SINGLE_REACT:
+                RainbowCycleSingleReactUpdate(intensity);
                 break;
             case THEATER_CHASE:
                 TheaterChaseUpdate();
@@ -212,25 +219,24 @@ public:
 
         for (u_int8_t ak = 0; ak < reactBars; ak++)
         {
-            //Serial.println(intensityA[ak]);
+            // Serial.println(intensityA[ak]);
             u_int8_t toLight = intensityA[ak] * perBar;
 
-            //Serial.print("tolight: ");
-            //Serial.println(toLight);
+            // Serial.print("tolight: ");
+            // Serial.println(toLight);
 
             for (u_int8_t i = cIndex; i < cIndex + perBar; i++)
             {
-               // setPixelColor(i,Wheel(((i * 256 / numPixels()) + Index) & 255, intensityA[ak]));        
-                
-                // this should light up to the right level.                
+                // setPixelColor(i,Wheel(((i * 256 / numPixels()) + Index) & 255, intensityA[ak]));
+
+                // this should light up to the right level.
                 if (i < cIndex + toLight)
                 {
-                    setPixelColor(i,Wheel(((i * 256 / numPixels()) + Index) & 255, 1));                   
+                    setPixelColor(i, Wheel(((i * 256 / numPixels()) + Index) & 255));
                 }
                 else
                 {
-                    setPixelColor(i,Wheel(((i * 256 / numPixels()) + Index) & 255, .1));
-                  
+                    setPixelColor(i, Wheel(((i * 256 / numPixels()) + Index) & 255, .2));
                 }
             }
 
@@ -238,8 +244,35 @@ public:
         }
 
         show();
-        Increment();      
+        Increment();
+    }
+
+    // Initialize for a RainbowCycle sound reactive.
+    void RainbowCycleSingleReact(uint8_t interval, uint8_t numBins, direction dir = FORWARD)
+    {
+        ActivePattern = RAINBOW_CYCLE_SINGLE_REACT;
+        Interval = interval;
+        TotalSteps = 255;
+        Index = 0;
+        Direction = dir;
+        reactBars = numBins;
+    }
+
+    // Update the Rainbow Cycle Pattern
+    void RainbowCycleSingleReactUpdate(double intensityA[])
+    {
+        double factor = intensityA[0];
+        if (intensityA[0] < .3)
+        {
+            factor = .3;
         }
+        for (int i = 0; i < numPixels(); i++)
+        {
+            setPixelColor(i, Wheel(((i * 256 / numPixels()) + Index) & 255, factor));
+        }
+        show();
+        Increment();
+    }
 
     // Initialize for a Theater Chase
     void TheaterChase(uint32_t color1, uint32_t color2, uint8_t interval, direction dir = FORWARD)
@@ -405,7 +438,7 @@ public:
         }
     }
 
-// Input a value 0 to 255 to get a color value.
+    // Input a value 0 to 255 to get a color value.
     // The colours are a transition r - g - b - back to r.
     uint32_t Wheel(byte WheelPos, double relIntensity)
     {
@@ -425,8 +458,6 @@ public:
             return Color((WheelPos * 3) * relIntensity, (255 - WheelPos * 3) * relIntensity, 0);
         }
     }
-
-
 };
 
 //
