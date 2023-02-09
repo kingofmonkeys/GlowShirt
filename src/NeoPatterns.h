@@ -220,6 +220,8 @@ public:
 
             for (u_int8_t i = cIndex; i < cIndex + perBar; i++)
             {
+               // setPixelColor(i,Wheel(((i * 256 / numPixels()) + Index) & 255, intensityA[ak]));        
+                
                 // this should light up to the right level.                
                 if (i < cIndex + toLight)
                 {

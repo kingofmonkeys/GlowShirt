@@ -5,30 +5,34 @@
 #include "hardware/pio.h"
 #include "quadrature.pio.h"
 
-#define PIN_NEO_PIXEL 5 // Arduino pin that connects to NeoPixel
-//#define QUADRATURE_A_PIN 10
-//#define QUADRATURE_B_PIN 11
-#define CLK 10         
-#define DATA 11        
-#define BUTTON 12
+#define PIN_NEO_PIXEL_FRONT 5 // Arduino pin that connects to NeoPixel
+#define PIN_NEO_PIXEL_BACK 4  // Arduino pin that connects to NeoPixel
 
-#define NUM_PIXELS 50 // The number of LEDs (pixels) on NeoPixel
-#define SAMPLES 64    // Must be a power of 2
+#define NUM_PIXELS_FRONT 50 // The number of LEDs (pixels) on NeoPixel
+#define NUM_PIXELS_BACK 50  // The number of LEDs (pixels) on NeoPixel
+
+#define SAMPLES 64 // Must be a power of 2
 #define MIC_IN A1
-#define SAMPLING_FREQUENCY 4000 // Hz, must be less than 10000 due to ADC
+#define SAMPLING_FREQUENCY 2000 // Hz, must be less than 10000 due to ADC
 #define INTENSITY_BINS 5
 #define CYCLE_TIME 4
 
+
+
+// #define QUADRATURE_A_PIN 10
+// #define QUADRATURE_B_PIN 11
+#define CLK 10
+#define DATA 11
+#define BUTTON 12
 
 int counter = 0;
 int priorCounter = 0;
 int currentStateCLK;
 int lastStateCLK;
-String currentDir ="";
+String currentDir = "";
 
-// INPUT: Potentiometer should be connected to 5V and GND
-int potPin = A0; // Potentiometer output connected to analog pin 3
-int potVal = 0; // Variable to store the input from the potentiometer
+unsigned int brightnessPotPin = A0;
+unsigned int brightnessPotVal = 0; // Variable to store the input from the potentiometer
 
 double vReal[SAMPLES];
 double vImag[SAMPLES];
@@ -43,6 +47,7 @@ unsigned long buttonPreviousMillis = 0;
 unsigned long brightnessPreviousMillis = 0;
 unsigned long brightnessPoll = 500;
 
+// This is used to change the led mode
 u_int8_t ledState = 0;
 
 arduinoFFT FFT = arduinoFFT();
@@ -54,103 +59,114 @@ void setLEDS();
 void processButtonPush();
 void updateEncoder();
 
-NeoPatterns strip = NeoPatterns(NUM_PIXELS, PIN_NEO_PIXEL, NEO_GRB + NEO_KHZ800, &StripComplete);
-
-
+NeoPatterns frontStrip = NeoPatterns(NUM_PIXELS_FRONT, PIN_NEO_PIXEL_FRONT, NEO_GRB + NEO_KHZ800, &StripComplete);
+NeoPatterns backStrip = NeoPatterns(NUM_PIXELS_BACK, PIN_NEO_PIXEL_BACK, NEO_GRB + NEO_KHZ800, &StripComplete);
 
 void setup()
-{  // put your setup code here, to run once:
+{ // put your setup code here, to run once:
   Serial.begin(115200);
-  
-  pinMode(CLK,INPUT_PULLUP);
-  pinMode(DATA,INPUT_PULLUP);
+
+  pinMode(CLK, INPUT_PULLUP);
+  pinMode(DATA, INPUT_PULLUP);
   pinMode(BUTTON, INPUT_PULLUP);
 
   attachInterrupt(digitalPinToInterrupt(BUTTON), processButtonPush, LOW);
-  
+
   attachInterrupt(digitalPinToInterrupt(CLK), updateEncoder, CHANGE);
-attachInterrupt(digitalPinToInterrupt(DATA), updateEncoder, CHANGE);
-  
+  attachInterrupt(digitalPinToInterrupt(DATA), updateEncoder, CHANGE);
 
   // tone down the brightness
-  int currentPotVal = analogRead(potPin); 
-    //do a map
-    int brightnessValue = map(currentPotVal, 0, 4095, 0, 255);
-    //set the brightness    
-    strip.setBrightness(brightnessValue);    
-  strip.begin();
-  //strip.RainbowCycleReact(CYCLE_TIME, INTENSITY_BINS);
+  int brightnessCurrentPotVal = analogRead(brightnessPotPin);
+  // do a map
+  int brightnessValue = map(brightnessCurrentPotVal, 0, 4095, 0, 255);
+  // set the brightness
+  frontStrip.setBrightness(brightnessValue);
+  backStrip.setBrightness(brightnessValue);
+  frontStrip.begin();
+  backStrip.begin();
   setLEDS();
   sampling_period_us = round(1000000 * (1.0 / SAMPLING_FREQUENCY));
   // set mic pin to input (not sure if this is even needed)
   pinMode(MIC_IN, INPUT);
   // turn up the analog resolution becuase i'm using a pico
-  analogReadResolution(12);  
- 
+  analogReadResolution(12);
 }
 
 void loop()
-{ 
+{
   unsigned long currentMillis = millis();
 
   if ((unsigned long)(currentMillis - brightnessPreviousMillis) >= brightnessPoll)
   {
-    int currentPotVal = analogRead(potPin); 
-    //do a map
+    int currentPotVal = analogRead(brightnessPotPin);
+    // do a map
     int brightnessValue = map(currentPotVal, 0, 4095, 0, 255);
-    //set the brightness    
-    strip.setBrightness(brightnessValue);    
-    brightnessPreviousMillis = currentMillis;
+    // set the brightness
+    frontStrip.setBrightness(brightnessValue);
+    backStrip.setBrightness(brightnessValue);    
+
+        brightnessPreviousMillis = currentMillis;
   }
 
-  if(priorCounter != counter)
-{  Serial.print("Direction: ");
-		Serial.print(currentDir);
-		Serial.print(" | Counter: ");
-		Serial.println(counter);
-priorCounter= counter;
-}
- 
-  
+  if (priorCounter != counter)
+  {
+    Serial.print("Direction: ");
+    Serial.print(currentDir);
+    Serial.print(" | Counter: ");
+    Serial.println(counter);
+    priorCounter = counter;
+  }
 
-
-  
   //  int sensorValue;
   //  sensorValue = analogRead(A1);
   // Serial.println(sensorValue);
   // Collect Samples
   getSamples();
-  // find intensities
-  getIntensities();
-  strip.Update(intensity);
-  //setLEDS(); 
+  //should check the ledstate here so we call the right thing...
+ if (ledState == 0)
+  {
+    // find intensities
+    getIntensities();
+  frontStrip.Update(intensity);
+  backStrip.Update(intensity);
+  }
+  else if (ledState == 1)
+  {
+  frontStrip.Update();
+  backStrip.Update();
+  }
+  
   
 }
 
-void updateEncoder(){
-	// Read the current state of CLK
-	currentStateCLK = digitalRead(CLK);
+void updateEncoder()
+{
+  // Read the current state of CLK
+  currentStateCLK = digitalRead(CLK);
 
-	// If last and current state of CLK are different, then pulse occurred
-	// React to only 1 state change to avoid double count
-	if (currentStateCLK != lastStateCLK  && currentStateCLK == 1){
+  // If last and current state of CLK are different, then pulse occurred
+  // React to only 1 state change to avoid double count
+  if (currentStateCLK != lastStateCLK && currentStateCLK == 1)
+  {
 
-		// If the DT state is different than the CLK state then
-		// the encoder is rotating CCW so decrement
-		if (digitalRead(DATA) != currentStateCLK) {
-			counter --;
-			currentDir ="CCW";
-		} else {
-			// Encoder is rotating CW so increment
-			counter ++;
-			currentDir ="CW";
-		}		
-	}
+    // If the DT state is different than the CLK state then
+    // the encoder is rotating CCW so decrement
+    if (digitalRead(DATA) != currentStateCLK)
+    {
+      counter--;
+      currentDir = "CCW";
+    }
+    else
+    {
+      // Encoder is rotating CW so increment
+      counter++;
+      currentDir = "CW";
+    }
+  }
 
-	// Remember last CLK state
-	lastStateCLK = currentStateCLK;
+  // Remember last CLK state
+  lastStateCLK = currentStateCLK;
 }
-
 
 void processButtonPush()
 {
@@ -171,7 +187,7 @@ void processButtonPush()
     }
 
     setLEDS();
-    
+
     // make sure to reset this time for the debounce code
     buttonPreviousMillis = currentMillis;
   }
@@ -204,16 +220,16 @@ void getIntensities()
 
   /*PRINT RESULTS*/
   // Serial.println("peak"); // Print out what frequency is the most dominant.
-  // Serial.println(peak);   // Print out what frequency is the most dominant.
+   //Serial.println(peak);   // Print out what frequency is the most dominant.
 
-  for (int i = 0; i < (SAMPLES / 2); i++)
-  {
-    /*View all these three lines in serial terminal to see which frequencies has which amplitudes*/
+  // for (int i = 0; i < (SAMPLES / 2); i++)
+  // {
+  //   /*View all these three lines in serial terminal to see which frequencies has which amplitudes*/
 
-    // Serial.print((i * 1.0 * SAMPLING_FREQUENCY) / SAMPLES, 1);
-    // Serial.print(" ");
-    // Serial.println(vReal[i], 1); // View only this line in serial plotter to visualize the bins
-  }
+  //   // Serial.print((i * 1.0 * SAMPLING_FREQUENCY) / SAMPLES, 1);
+  //   // Serial.print(" ");
+  //   // Serial.println(vReal[i], 1); // View only this line in serial plotter to visualize the bins
+  // }
 
   /* // TEST data
   vReal[0] = 500;
@@ -264,9 +280,12 @@ void getIntensities()
   // need to setup intensity.
 
   u_int8_t kin = 2;
+  u_int16_t sum = 0;
+  u_int8_t count = 0;
   u_int16_t total = 0;
   u_int16_t avg = 0;
   u_int16_t highest = 0;
+  u_int8_t highestIndex = 0;
 
   for (u_int8_t ii = 0; ii < INTENSITY_BINS; ii++)
   {
@@ -277,53 +296,91 @@ void getIntensities()
       //  Serial.print("]: ");
       // Serial.println(vReal[i]);
       total += vReal[i];
+      sum += vReal[i];
+      count++;
     }
     kin = kin + feqPerBin;
     // Serial.print("kin: ");
     // Serial.println(kin);
-    avg = total / feqPerBin;
+    avg = total / feqPerBin;   
+
     // adjust the base down.  these offsets might be an issue.
     if (ii == 0)
-    {
-      if (avg > 300)
-      {
-        avg = avg - 300;
-      }
+    {        
+      //just take 2 and 3 
+      // total = 0;
+      // avg = 0;
+      // total += vReal[2];
+      // total += vReal[3];
+      // avg = total / 2;
+      if (avg > 1000)
+        {
+          avg = avg - 1000;
+        } else {
+          avg = avg/2;
+        }
     }
     if (ii == 1)
-    {
-      if (avg > 100)
-      {
-        avg = avg - 100;
-      }
+    {      
+       if (avg > 100)
+       {
+         avg = avg - 100;
+       }
+      //total += vReal[8];
+      //total += vReal[9];
+      //total += vReal[10];
+      //avg = total / 3;
     }
+    // if (ii == 2)
+    // {
+    //   total += vReal[13];
+    //   total += vReal[14];
+    //   total += vReal[15];
+    //   avg = total / 3;
+    // }
+    
     if (ii == 3)
     {
       avg = avg + 200;
+    //  total += vReal[18];
+    //   total += vReal[19];
+    //   total += vReal[20];
+    //   avg = total / 3;
     }
     if (ii == 4)
     {
       avg = avg + 300;
+      // total += vReal[27];
+      // total += vReal[28];
+      // total += vReal[30];
+      // avg = total / 3;
     }
+
     // Serial.print("avg: ");
     // Serial.println(avg);
     // this sets the highest value in this loop.
+
+
     if (avg > highest)
     {
       highest = avg;
+      highestIndex = ii;
     }
     intensity[ii] = avg;
     // reset the average and total
     total = 0;
     avg = 0;
   }
+  
+  u_int8_t sumAvg = sum / count;
+Serial.println(highest);
 
   // for (u_int8_t ak=0; ak < INTENSITY_BINS; ak++)
   //{
   //  Serial.println(intensity[ak]);
   // }
   // this 800 needs to be in a sensitivy control.
-  if (highest < 700)
+  if (highest < 400 || highest < sumAvg * 2)
   {
     for (u_int8_t ak = 0; ak < INTENSITY_BINS; ak++)
     {
@@ -349,13 +406,17 @@ void setLEDS()
 {
   if (ledState == 0)
   {
-    strip.RainbowCycleReact(CYCLE_TIME, INTENSITY_BINS);
+    frontStrip.RainbowCycleReact(CYCLE_TIME, INTENSITY_BINS);
+    backStrip.RainbowCycleReact(CYCLE_TIME, INTENSITY_BINS);
   }
   else if (ledState == 1)
   {
-    strip.RainbowCycle(CYCLE_TIME);
+    frontStrip.RainbowCycle(CYCLE_TIME);
+    backStrip.RainbowCycle(CYCLE_TIME);
   }
 }
+
+// this is junk below this
 
 // void setLEDS()
 // {
