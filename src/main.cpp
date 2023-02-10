@@ -135,7 +135,7 @@ void loop()
   if ((unsigned long)(currentMillis - senPreviousMillis) >= senPoll)
   {
     senPotVal = analogRead(senPotPin);
-    // Serial.println(senPotVal);
+   //Serial.println(senPotVal);
     senPreviousMillis = currentMillis;
   }
   // disable encoder code since i'm not using it
@@ -267,20 +267,20 @@ void getIntensities()
     // adjust the base down.  these offsets might be an issue.
     if (ii == 0)
     {
-      avg = avg * .7;
+      avg = avg * .8;
     }
     if (ii == 1)
     {
-      avg = avg * 1.3;
+      avg = avg * 1;
     }
     if (ii == 2)
     {
-      avg = avg * 3;
+      avg = avg * 5;
     }
 
     else
     {
-      avg = avg * 4;
+      avg = avg * 7;
     }
     if (avg > 4095)
     {
